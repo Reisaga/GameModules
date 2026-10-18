@@ -1,7 +1,3 @@
--- Low Server Finder GUI - ban cai tien
--- Chuc nang: quet may chu cong khai, loc theo so nguoi choi, tim ID, sap xep,
--- lam moi danh sach, xu ly loi HTTP va gioi han so trang de tranh gui qua nhieu request.
-
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local TeleportService = game:GetService("TeleportService")
@@ -16,14 +12,14 @@ end
 
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Cau hinh quet. 30 trang tuong duong toi da 3.000 muc du lieu neu API tra du.
 local MAX_PAGES = 30
 local MAX_RETRIES = 4
 local REQUEST_DELAY = 0.35
 local MAX_VISIBLE_SERVERS = 250
-local DEFAULT_PLAYER_LIMIT = 8
+local DEFAULT_MIN_PLAYER_LIMIT = 1
+local DEFAULT_MAX_PLAYER_LIMIT = 2
+local SETTINGS_FILE = "LowServerFinder_Settings.json"
 
--- Tuong thich voi mot so moi truong chay Lua co ho tro HTTP request.
 local requestFunc
 if syn and syn.request then
     requestFunc = syn.request
@@ -41,7 +37,8 @@ if type(requestFunc) ~= "function" then
     error("Khong tim thay ham HTTP request duoc ho tro trong moi truong hien tai.")
 end
 
--- Xoa giao dien cu neu script duoc chay lai.
+local fileIOSupported = type(writefile) == "function" and type(readfile) == "function" and type(isfile) == "function"
+
 local oldGui = PlayerGui:FindFirstChild("LowServerFinder")
 if oldGui then
     oldGui:Destroy()
@@ -86,7 +83,6 @@ local function safeLower(text)
     return string.lower(tostring(text or ""))
 end
 
--- Tao giao dien chinh.
 local ScreenGui = createInstance("ScreenGui", {
     Name = "LowServerFinder",
     ResetOnSpawn = false,
@@ -171,11 +167,10 @@ local HideButton = createInstance("TextButton", {
 }, TitleBar)
 addCorner(HideButton, 7)
 
--- Cac dieu khien loc va sap xep.
 local SearchBox = createInstance("TextBox", {
     Name = "SearchBox",
     Position = UDim2.new(0, 12, 0, 54),
-    Size = UDim2.new(0.42, -7, 0, 34),
+    Size = UDim2.new(0.34, -7, 0, 34),
     BackgroundColor3 = Color3.fromRGB(29, 41, 62),
     BorderSizePixel = 0,
     ClearTextOnFocus = false,
@@ -194,27 +189,44 @@ createInstance("UIPadding", {
     PaddingRight = UDim.new(0, 8),
 }, SearchBox)
 
-local PlayerLimitBox = createInstance("TextBox", {
-    Name = "PlayerLimitBox",
-    Position = UDim2.new(0.44, 0, 0, 54),
-    Size = UDim2.new(0.14, -4, 0, 34),
+local MinPlayerBox = createInstance("TextBox", {
+    Name = "MinPlayerBox",
+    Position = UDim2.new(0.35, 0, 0, 54),
+    Size = UDim2.new(0.12, -4, 0, 34),
     BackgroundColor3 = Color3.fromRGB(29, 41, 62),
     BorderSizePixel = 0,
     ClearTextOnFocus = false,
     Font = Enum.Font.Gotham,
-    PlaceholderText = "So nguoi",
-    Text = tostring(DEFAULT_PLAYER_LIMIT),
+    PlaceholderText = "Toi thieu",
+    Text = tostring(DEFAULT_MIN_PLAYER_LIMIT),
     TextColor3 = Color3.fromRGB(240, 245, 255),
     TextSize = 13,
     TextXAlignment = Enum.TextXAlignment.Center,
 }, MainFrame)
-addCorner(PlayerLimitBox, 7)
-addStroke(PlayerLimitBox, Color3.fromRGB(59, 76, 106), 1, 0)
+addCorner(MinPlayerBox, 7)
+addStroke(MinPlayerBox, Color3.fromRGB(59, 76, 106), 1, 0)
+
+local MaxPlayerBox = createInstance("TextBox", {
+    Name = "MaxPlayerBox",
+    Position = UDim2.new(0.48, 0, 0, 54),
+    Size = UDim2.new(0.12, -4, 0, 34),
+    BackgroundColor3 = Color3.fromRGB(29, 41, 62),
+    BorderSizePixel = 0,
+    ClearTextOnFocus = false,
+    Font = Enum.Font.Gotham,
+    PlaceholderText = "Toi da",
+    Text = tostring(DEFAULT_MAX_PLAYER_LIMIT),
+    TextColor3 = Color3.fromRGB(240, 245, 255),
+    TextSize = 13,
+    TextXAlignment = Enum.TextXAlignment.Center,
+}, MainFrame)
+addCorner(MaxPlayerBox, 7)
+addStroke(MaxPlayerBox, Color3.fromRGB(59, 76, 106), 1, 0)
 
 local SortButton = createInstance("TextButton", {
     Name = "SortButton",
-    Position = UDim2.new(0.60, 0, 0, 54),
-    Size = UDim2.new(0.20, -5, 0, 34),
+    Position = UDim2.new(0.61, 0, 0, 54),
+    Size = UDim2.new(0.18, -5, 0, 34),
     BackgroundColor3 = Color3.fromRGB(54, 91, 150),
     BorderSizePixel = 0,
     Font = Enum.Font.GothamSemibold,
@@ -227,8 +239,8 @@ addCorner(SortButton, 7)
 
 local RefreshButton = createInstance("TextButton", {
     Name = "RefreshButton",
-    Position = UDim2.new(0.81, 0, 0, 54),
-    Size = UDim2.new(0.17, -4, 0, 34),
+    Position = UDim2.new(0.80, 0, 0, 54),
+    Size = UDim2.new(0.19, -4, 0, 34),
     BackgroundColor3 = Color3.fromRGB(32, 146, 104),
     BorderSizePixel = 0,
     Font = Enum.Font.GothamBold,
@@ -253,10 +265,24 @@ local AutoHopButton = createInstance("TextButton", {
 }, MainFrame)
 addCorner(AutoHopButton, 7)
 
+local SaveSettingsButton = createInstance("TextButton", {
+    Name = "SaveSettingsButton",
+    Position = UDim2.new(0, 168, 0, 94),
+    Size = UDim2.new(0, 96, 0, 29),
+    BackgroundColor3 = Color3.fromRGB(58, 75, 105),
+    BorderSizePixel = 0,
+    Font = Enum.Font.GothamBold,
+    Text = "LUU CAI DAT",
+    TextColor3 = Color3.new(1, 1, 1),
+    TextSize = 11,
+    AutoButtonColor = true,
+}, MainFrame)
+addCorner(SaveSettingsButton, 7)
+
 local StatusLabel = createInstance("TextLabel", {
     Name = "StatusLabel",
-    Position = UDim2.new(0, 172, 0, 94),
-    Size = UDim2.new(1, -184, 0, 29),
+    Position = UDim2.new(0, 272, 0, 94),
+    Size = UDim2.new(1, -284, 0, 29),
     BackgroundTransparency = 1,
     Font = Enum.Font.Gotham,
     Text = "San sang quet may chu cong khai.",
@@ -291,7 +317,6 @@ createInstance("UIListLayout", {
     Padding = UDim.new(0, 6),
 }, ServerListFrame)
 
--- Nut thu gon luon nam ben ngoai cua so chinh.
 local ToggleButton = createInstance("TextButton", {
     Name = "ToggleButton",
     AnchorPoint = Vector2.new(0, 0.5),
@@ -318,13 +343,54 @@ local pagesScanned = 0
 local allServers = {}
 local lastStatus = "San sang"
 
-local function currentPlayerLimit()
-    local value = tonumber(trim(PlayerLimitBox.Text))
+local function currentMinPlayerLimit()
+    local value = tonumber(trim(MinPlayerBox.Text))
     if not value then
-        value = DEFAULT_PLAYER_LIMIT
+        value = DEFAULT_MIN_PLAYER_LIMIT
     end
     value = math.clamp(math.floor(value), 0, 100)
     return value
+end
+
+local function currentMaxPlayerLimit()
+    local value = tonumber(trim(MaxPlayerBox.Text))
+    if not value then
+        value = DEFAULT_MAX_PLAYER_LIMIT
+    end
+    value = math.clamp(math.floor(value), 0, 100)
+    return value
+end
+
+local function saveSettings()
+    if not fileIOSupported then
+        return false
+    end
+    local ok = pcall(function()
+        local data = {
+            minPlayers = currentMinPlayerLimit(),
+            maxPlayers = currentMaxPlayerLimit(),
+            sortAscending = sortAscending,
+            autoHopEnabled = autoHopEnabled,
+        }
+        writefile(SETTINGS_FILE, HttpService:JSONEncode(data))
+    end)
+    return ok
+end
+
+local function loadSettings()
+    if not fileIOSupported then
+        return nil
+    end
+    local ok, result = pcall(function()
+        if isfile(SETTINGS_FILE) then
+            return HttpService:JSONDecode(readfile(SETTINGS_FILE))
+        end
+        return nil
+    end)
+    if ok and type(result) == "table" then
+        return result
+    end
+    return nil
 end
 
 local function updateStatus(message)
@@ -467,7 +533,8 @@ local function renderServers()
     clearServerEntries()
 
     local query = safeLower(trim(SearchBox.Text))
-    local playerLimit = currentPlayerLimit()
+    local minLimit = currentMinPlayerLimit()
+    local maxLimit = currentMaxPlayerLimit()
     local filtered = {}
 
     for _, server in ipairs(allServers) do
@@ -475,11 +542,11 @@ local function renderServers()
         local maxPlayers = tonumber(server.maxPlayers) or 0
         local idText = safeLower(server.id)
         local isOpen = playersNow < maxPlayers
-        local underLimit = playersNow <= playerLimit
+        local inBand = playersNow >= minLimit and playersNow <= maxLimit
         local matchesSearch = query == "" or string.find(idText, query, 1, true) ~= nil
             or string.find(tostring(playersNow), query, 1, true) ~= nil
 
-        if isOpen and underLimit and matchesSearch then
+        if isOpen and inBand and matchesSearch then
             table.insert(filtered, server)
         end
     end
@@ -503,29 +570,32 @@ local function renderServers()
         elseif #allServers == 0 then
             createEmptyState("Chua co du lieu. Nhan QUET LAI de thu lai.")
         else
-            createEmptyState("Khong co may chu phu hop. Tang gioi han nguoi choi hoac xoa tu khoa tim kiem.")
+            createEmptyState(string.format("Khong co may chu tu %d den %d nguoi. Thu doi khoang nguoi choi hoac xoa tu khoa tim kiem.", minLimit, maxLimit))
         end
     else
         for index = 1, visibleCount do
             createServerEntry(filtered[index], index)
         end
         if #filtered > visibleCount then
-            createEmptyState(string.format("Dang hien thi %d / %d may chu phu hop. Cac ket qua it nguoi choi hon duoc uu tien.", visibleCount, #filtered))
+            createEmptyState(string.format("Dang hien thi %d / %d may chu phu hop.", visibleCount, #filtered))
         end
     end
 
     SortButton.Text = sortAscending and "It nguoi truoc" or "Nhieu nguoi truoc"
 end
 
-local function setAutoHopEnabled(enabled)
+local function setAutoHopEnabled(enabled, skipSave)
     autoHopEnabled = enabled
     AutoHopButton.Text = enabled and "AUTO HOP: ON" or "AUTO HOP: OFF"
     AutoHopButton.BackgroundColor3 = enabled and Color3.fromRGB(32, 146, 104) or Color3.fromRGB(75, 79, 91)
     if enabled then
-        updateStatus("Auto hop bat: uu tien " .. (sortAscending and "may chu it nguoi" or "may chu nhieu nguoi"))
+        updateStatus(string.format("Auto hop bat: tim may chu %d-%d nguoi, se dung khi vao duoc", currentMinPlayerLimit(), currentMaxPlayerLimit()))
     else
         autoHopInProgress = false
         updateStatus("Auto hop da tat")
+    end
+    if not skipSave then
+        saveSettings()
     end
 end
 
@@ -537,12 +607,12 @@ local function attemptAutoHop()
     end
 
     local candidates = {}
-    local playerLimit = currentPlayerLimit()
+    local minLimit = currentMinPlayerLimit()
+    local maxLimit = currentMaxPlayerLimit()
     for _, server in ipairs(allServers) do
         local playing = tonumber(server.playing) or 0
         local maximum = tonumber(server.maxPlayers) or 0
-        if maximum > playing and not autoHopAttempted[server.id]
-            and (not sortAscending or playing <= playerLimit) then
+        if maximum > playing and playing >= minLimit and playing <= maxLimit and not autoHopAttempted[server.id] then
             table.insert(candidates, server)
         end
     end
@@ -555,7 +625,7 @@ local function attemptAutoHop()
 
     local target = candidates[1]
     if not target then
-        updateStatus("Auto hop: khong co may chu phu hop; dang quet lai sau 3 giay")
+        updateStatus(string.format("Auto hop: khong co may chu %d-%d nguoi; dang quet lai sau 3 giay", minLimit, maxLimit))
         task.delay(3, function()
             if autoHopEnabled and ScreenGui.Parent and not isScanning then
                 startScan()
@@ -577,16 +647,12 @@ local function attemptAutoHop()
             if autoHopEnabled and ScreenGui.Parent then attemptAutoHop() end
         end)
     else
-        task.delay(8, function()
-            if autoHopEnabled and ScreenGui.Parent then
-                autoHopInProgress = false
-                attemptAutoHop()
-            end
-        end)
+        updateStatus(string.format("Auto hop: da gui yeu cau vao may chu %d nguoi, dang dung auto hop", target.playing))
+        setAutoHopEnabled(false, true)
+        autoHopInProgress = false
     end
 end
 
--- Goi API co thu lai khi bi gioi han hoac loi may chu.
 local function fetchServers(cursor)
     local url = string.format(
         "https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100",
@@ -696,8 +762,6 @@ startScan = function()
             end
 
             cursor = payload.nextPageCursor
-
-            -- Hien ket qua tim duoc ngay, khong doi quet het moi hien danh sach.
             renderServers()
 
             if not cursor or cursor == "" then
@@ -705,7 +769,6 @@ startScan = function()
                 break
             end
 
-            -- Bao ve khi API tra ve cursor lap, tranh quet vong lap vo han.
             if seenCursors[cursor] then
                 scanError = "API tra ve cursor lap; da dung quet de tranh lap vo han"
                 break
@@ -740,20 +803,27 @@ startScan = function()
     end)
 end
 
--- Tim kiem cap nhat truc tiep, loc so nguoi cap nhat khi roi khoi o nhap.
 SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
     renderServers()
 end)
 
-PlayerLimitBox.FocusLost:Connect(function()
-    PlayerLimitBox.Text = tostring(currentPlayerLimit())
+MinPlayerBox.FocusLost:Connect(function()
+    MinPlayerBox.Text = tostring(currentMinPlayerLimit())
     renderServers()
+    saveSettings()
+end)
+
+MaxPlayerBox.FocusLost:Connect(function()
+    MaxPlayerBox.Text = tostring(currentMaxPlayerLimit())
+    renderServers()
+    saveSettings()
 end)
 
 SortButton.Activated:Connect(function()
     sortAscending = not sortAscending
     autoHopAttempted = {}
     renderServers()
+    saveSettings()
     if autoHopEnabled and not isScanning then task.delay(0.2, attemptAutoHop) end
 end)
 
@@ -764,6 +834,14 @@ AutoHopButton.Activated:Connect(function()
     if autoHopEnabled and not isScanning then
         autoHopAttempted = {}
         startScan()
+    end
+end)
+
+SaveSettingsButton.Activated:Connect(function()
+    if saveSettings() then
+        updateStatus("Da luu cai dat")
+    else
+        updateStatus("Khong the luu cai dat: moi truong khong ho tro writefile")
     end
 end)
 
@@ -784,7 +862,6 @@ CloseButton.Activated:Connect(function()
     ScreenGui:Destroy()
 end)
 
--- Keo cua so bang thanh tieu de; giu nguyen toa do scale ban dau.
 do
     local dragging = false
     local dragInput = nil
@@ -823,18 +900,29 @@ do
     end)
 end
 
--- Cap nhat trang thai neu Roblox tu choi yeu cau dich chuyen.
 pcall(function()
     TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
         if player == LocalPlayer and ScreenGui.Parent then
             updateStatus("Dich chuyen that bai: " .. tostring(result) .. " - " .. tostring(errorMessage))
-            if autoHopEnabled then
-                autoHopInProgress = false
-                task.delay(1, attemptAutoHop)
-            end
         end
     end)
 end)
 
--- Bat dau quet tu dong khi giao dien duoc tao.
+local savedSettings = loadSettings()
+if savedSettings then
+    if savedSettings.minPlayers then
+        MinPlayerBox.Text = tostring(math.clamp(math.floor(savedSettings.minPlayers), 0, 100))
+    end
+    if savedSettings.maxPlayers then
+        MaxPlayerBox.Text = tostring(math.clamp(math.floor(savedSettings.maxPlayers), 0, 100))
+    end
+    if type(savedSettings.sortAscending) == "boolean" then
+        sortAscending = savedSettings.sortAscending
+        SortButton.Text = sortAscending and "It nguoi truoc" or "Nhieu nguoi truoc"
+    end
+    if savedSettings.autoHopEnabled == true then
+        setAutoHopEnabled(true, true)
+    end
+end
+
 startScan()
