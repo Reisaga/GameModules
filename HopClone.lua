@@ -39,32 +39,106 @@ pcall(function()
 	end
 end)
 
-local Lumen = loadstring(game:HttpGet("https://raw.githubusercontent.com/chromatiks/Lumen/main/Library.lua"))()
+local VindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Skinny-yz/VVind-UI/refs/heads/main/src.lua"))()
+VindUI:PreloadIcons({ "Lucide", "Material", "Phosphor", "SF" })
+VindUI:SetScaleRange(0.75, 1.35)
 
-Lumen.SetConfigFolder("LowServerFinder")
-Lumen:LoadingScreen({ Title = "Low Server Finder"; Subtitle = gameName; Duration = 1.0 })
-Lumen.SetWatermark("Low Server Finder", true)
-Lumen.SetKeybindList(true)
-
-local Window = Lumen:Window({
-	Title = "Low Server Finder";
-	Footer = gameName;
+local Window = VindUI:CreateWindow({
+	Title = "Low Server Finder",
+	Subtitle = gameName,
+	Icon = "Lucide:server",
+	Size = UDim2.fromOffset(580, 420),
+	MinSize = Vector2.new(460, 320),
+	Draggable = true,
+	Resizable = true,
+	UseBlur = true,
+	DefaultTab = "Finder",
 })
 
-local FinderPage = Window:Page({ Icon = "server" })
-local ConfigSection = FinderPage:Section({ Name = "Cau hinh Auto Hop"; Side = "Left"; Icon = "sliders" })
-local ActionSection = FinderPage:Section({ Name = "Trang thai & Dieu khien"; Side = "Right"; Icon = "activity" })
+local Tabs = {}
+Tabs.Finder = Window:AddTab({ Name = "Server Finder", Icon = "Lucide:server" })
+Tabs.Settings = Window:AddTab({ Name = "Settings", Icon = "Lucide:settings" })
 
 local updateStatusText = function(title, body)
-	if statusParagraph and statusParagraph.SetBody then
+	if statusParagraph and statusParagraph.Set then
 		statusParagraph:SetTitle(title)
-		statusParagraph:SetBody(body)
+		statusParagraph:Set(body)
 	end
 end
 
-statusParagraph = ActionSection:Paragraph({
-	Title = "Trang thai";
-	Body = "Dang khoi tao...";
+Tabs.Finder:AddSection("Cau hinh Auto Hop", "Lucide:sliders")
+
+Tabs.Finder:AddToggle({
+	Text = "Auto Hop (Tu dong vao)",
+	Description = "Tu dong quet va vao server it nguoi nhat",
+	Icon = "Lucide:zap",
+	Flag = "autoHop",
+	Default = true,
+	Callback = function(value)
+		autoHopEnabled = value
+		if autoHopEnabled then
+			updateStatusText("Auto Hop", string.format("Bat: Tim server tu %d den %d nguoi...", minPlayersLimit, maxPlayersLimit))
+			attemptedServers = {}
+			startAutoScan()
+		else
+			autoHopInProgress = false
+			updateStatusText("Auto Hop", "Da tat Auto Hop.")
+		end
+	end,
+})
+
+Tabs.Finder:AddSlider({
+	Text = "Nguoi choi toi thieu",
+	Description = "So nguoi choi it nhat trong server",
+	Icon = "Lucide:user",
+	Flag = "minPlayers",
+	Min = 0,
+	Max = 10,
+	Default = 1,
+	Increment = 1,
+	Suffix = " nguoi",
+	Callback = function(value)
+		minPlayersLimit = math.floor(tonumber(value) or 1)
+	end,
+})
+
+Tabs.Finder:AddSlider({
+	Text = "Nguoi choi toi da",
+	Description = "So nguoi choi nhieu nhat trong server",
+	Icon = "Lucide:users",
+	Flag = "maxPlayers",
+	Min = 1,
+	Max = 15,
+	Default = 2,
+	Increment = 1,
+	Suffix = " nguoi",
+	Callback = function(value)
+		maxPlayersLimit = math.floor(tonumber(value) or 2)
+	end,
+})
+
+Tabs.Finder:AddSlider({
+	Text = "Do tre quet (Delay)",
+	Description = "Thoi gian cho giua cac trang API",
+	Icon = "Lucide:timer",
+	Flag = "requestDelay",
+	Min = 0.15,
+	Max = 1.0,
+	Default = 0.25,
+	Increment = 0.05,
+	Suffix = "s",
+	Callback = function(value)
+		requestDelay = tonumber(value) or 0.25
+	end,
+})
+
+Tabs.Finder:AddDivider()
+Tabs.Finder:AddSection("Trang thai & Dieu khien", "Lucide:activity")
+
+statusParagraph = Tabs.Finder:AddParagraph({
+	Title = "Trang thai",
+	Icon = "Lucide:info",
+	Text = "Dang chuan bi quet may chu...",
 })
 
 local startAutoScan
@@ -102,7 +176,7 @@ attemptAutoHop = function()
 	attemptedServers[target.id] = true
 	autoHopInProgress = true
 	updateStatusText("Dich chuyen", string.format("Dang vao server %d nguoi (ID: %s)", target.playing, target.id))
-	Lumen.Notify({ Title = "Auto Hop"; Text = string.format("Dang vao server %d nguoi...", target.playing); Type = "Success"; Duration = 3 })
+	VindUI:Notify({ Title = "Auto Hop", Text = string.format("Dang vao server %d nguoi...", target.playing), Type = "success", Duration = 3 })
 
 	local ok, err = pcall(function()
 		TeleportService:TeleportToPlaceInstance(placeId, target.id, LocalPlayer)
@@ -110,7 +184,7 @@ attemptAutoHop = function()
 
 	if not ok then
 		autoHopInProgress = false
-		updateStatusText("Loi vao server", tostring(err) .. "; dang thu server khac...")
+		updateStatusText("Loi vao server", tostring(err) .. "; dang thu server tiep theo...")
 		task.delay(0.5, function()
 			if autoHopEnabled then
 				attemptAutoHop()
@@ -236,92 +310,77 @@ startAutoScan = function()
 	end)
 end
 
-local AutoHopToggle = ConfigSection:Label({ Text = "Auto Hop (Tu dong vao)" })
-AutoHopToggle:Toggle({
-	State = true;
-	Flag = "AutoHopEnabled";
-	Callback = function(state)
-		autoHopEnabled = state
-		if autoHopEnabled then
-			updateStatusText("Auto Hop", string.format("Bat: Tim server tu %d den %d nguoi...", minPlayersLimit, maxPlayersLimit))
-			attemptedServers = {}
-			startAutoScan()
-		else
-			autoHopInProgress = false
-			updateStatusText("Auto Hop", "Da tat Auto Hop.")
-		end
-	end;
-})
-
-ConfigSection:Slider({
-	Name = "Nguoi choi toi thieu";
-	Suffix = " nguoi";
-	Value = 1;
-	Min = 0;
-	Max = 10;
-	Increment = 1;
-	Flag = "MinPlayers";
-	Callback = function(val)
-		minPlayersLimit = math.floor(tonumber(val) or 1)
-	end;
-})
-
-ConfigSection:Slider({
-	Name = "Nguoi choi toi da";
-	Suffix = " nguoi";
-	Value = 2;
-	Min = 1;
-	Max = 15;
-	Increment = 1;
-	Flag = "MaxPlayers";
-	Callback = function(val)
-		maxPlayersLimit = math.floor(tonumber(val) or 2)
-	end;
-})
-
-ConfigSection:Slider({
-	Name = "Do tre moi trang (Delay)";
-	Suffix = "s";
-	Value = 0.25;
-	Min = 0.15;
-	Max = 1.0;
-	Increment = 0.05;
-	Flag = "RequestDelay";
-	Callback = function(val)
-		requestDelay = tonumber(val) or 0.25
-	end;
-})
-
-ActionSection:Button({
-	Name = "Quet lai ngay";
+Tabs.Finder:AddButton({
+	Text = "Quet lai ngay",
+	Description = "Lam moi danh sach va tim may chu moi",
+	Icon = "Lucide:refresh-cw",
 	Callback = function()
 		attemptedServers = {}
 		startAutoScan()
-	end;
+	end,
 })
 
-ActionSection:Button({
-	Name = "Vao server it nguoi nhat";
+Tabs.Finder:AddButton({
+	Text = "Vao server it nguoi nhat",
+	Description = "Dich chuyen den server co so nguoi thap nhat da tim thay",
+	Icon = "Lucide:log-in",
 	Callback = function()
 		attemptAutoHop()
-	end;
+	end,
 })
 
-ActionSection:Button({
-	Name = "Dung quet";
+Tabs.Finder:AddButton({
+	Text = "Dung quet",
+	Description = "Dung tien trinh quet may chu hien tai",
+	Icon = "Lucide:circle-stop",
 	Callback = function()
 		scanGeneration = scanGeneration + 1
 		isScanning = false
 		autoHopInProgress = false
 		updateStatusText("Da dung", "Da dung qua trinh quet may chu.")
-	end;
+	end,
 })
 
-local Settings = Window:Page({ Icon = "settings" })
-local AboutSection = Settings:Section({ Name = "Thong tin"; Side = "Left"; Icon = "info" })
-AboutSection:Paragraph({
-	Title = "Low Server Finder";
-	Body = "Script tu dong quet danh sach may chu Roblox cong khai va ho tro Auto Hop vao server it nguoi nhat (1-2 nguoi) voi giao dien Lumen.";
+Tabs.Settings:AddSection("Giao dien & Cai dat", "Lucide:sliders-horizontal")
+
+Tabs.Settings:AddToggle({
+	Text = "Dark Mode",
+	Description = "Bat hoac tat che do toi",
+	Icon = "Lucide:moon",
+	Flag = "darkMode",
+	Default = true,
+	Callback = function() end,
+})
+
+Tabs.Settings:AddToggle({
+	Text = "Background Blur",
+	Description = "Lam mo the gioi khi mo menu",
+	Icon = "Lucide:sparkles",
+	Flag = "blur",
+	Default = true,
+	Callback = function(value)
+		VindUI:SetBlurEnabled(value)
+	end,
+})
+
+Tabs.Settings:AddKeybind({
+	Text = "Phim mo/dong menu",
+	Description = "Nhan phim de bat hoac tat menu",
+	Icon = "Lucide:keyboard",
+	Flag = "toggleKey",
+	Default = Enum.KeyCode.RightShift,
+	Callback = function(key, kind)
+		if kind == "press" then
+			Window:Toggle()
+		end
+	end,
+})
+
+Tabs.Settings:AddDivider()
+Tabs.Settings:AddParagraph({
+	Title = "Low Server Finder",
+	Icon = "Lucide:info",
+	Text = "Script tu dong quet danh sach may chu Roblox cong khai va ho tro Auto Hop vao server it nguoi nhat (1-2 nguoi) bang thu vien Vind UI Reborn v2.7.7.",
 })
 
 pcall(function()
@@ -336,7 +395,14 @@ pcall(function()
 	end)
 end)
 
-Lumen:BuildConfigPage(Window)
-Lumen.Notify({ Title = "Low Server Finder"; Text = "Giao dien da san sang!"; Type = "Success"; Duration = 3 })
+Window:SelectTab("Server Finder")
+Window:Open()
+
+VindUI:Notify({
+	Title = "Low Server Finder",
+	Text = "Giao dien Vind UI da san sang!",
+	Type = "success",
+	Duration = 3,
+})
 
 startAutoScan()
