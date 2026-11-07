@@ -30,8 +30,9 @@ end
 local autoHopEnabled = true
 local autoHopInProgress = false
 local minPlayersLimit = 1
-local maxPlayersLimit = 2
-local requestDelay = 0.20
+local maxPlayersLimit = 1
+local hopDelay = 30
+local apiRequestDelay = 0.25
 local isScanning = false
 local scanGeneration = 0
 local allDiscoveredServers = {}
@@ -53,7 +54,7 @@ local Window = VindUI:CreateWindow({
 	Title = "Low Server Finder",
 	Subtitle = gameName,
 	Icon = "Lucide:server",
-	Size = UDim2.fromOffset(580, 430),
+	Size = UDim2.fromOffset(590, 440),
 	MinSize = Vector2.new(460, 330),
 	Draggable = true,
 	Resizable = true,
@@ -72,19 +73,18 @@ local updateStatusText = function(title, body)
 	end
 end
 
-Tabs.Finder:AddSection("Cau hinh Auto Hop Chuan", "Lucide:sliders")
+Tabs.Finder:AddSection("Cau hinh Auto Hop Chuyen Sau", "Lucide:sliders")
 
 Tabs.Finder:AddToggle({
 	Text = "Auto Hop (Tu dong vao)",
-	Description = "Tu dong quet va vao server it nguoi nhat",
+	Description = "Tu dong tim va chuyen den server it nguoi nhat",
 	Icon = "Lucide:zap",
 	Flag = "autoHop",
 	Default = true,
 	Callback = function(value)
 		autoHopEnabled = value
 		if autoHopEnabled then
-			updateStatusText("Auto Hop", string.format("Bat: Uu tien server %d-%d nguoi...", minPlayersLimit, maxPlayersLimit))
-			startAutoScan()
+			updateStatusText("Auto Hop", string.format("Bat: Uu tien server <= %d nguoi...", maxPlayersLimit))
 		else
 			autoHopInProgress = false
 			updateStatusText("Auto Hop", "Da tat Auto Hop.")
@@ -93,47 +93,47 @@ Tabs.Finder:AddToggle({
 })
 
 Tabs.Finder:AddSlider({
-	Text = "Nguoi choi toi thieu",
-	Description = "So nguoi it nhat trong server",
-	Icon = "Lucide:user",
-	Flag = "minPlayers",
-	Min = 0,
+	Text = "So nguoi toi da chap nhan",
+	Description = "Dat 1 de chi tim server dung 1 nguoi",
+	Icon = "Lucide:users",
+	Flag = "maxPlayers",
+	Min = 1,
 	Max = 5,
 	Default = 1,
 	Increment = 1,
 	Suffix = " nguoi",
 	Callback = function(value)
-		minPlayersLimit = math.floor(tonumber(value) or 1)
+		maxPlayersLimit = math.floor(tonumber(value) or 1)
 	end,
 })
 
 Tabs.Finder:AddSlider({
-	Text = "Nguoi choi toi da",
-	Description = "So nguoi nhieu nhat chap nhan",
-	Icon = "Lucide:users",
-	Flag = "maxPlayers",
-	Min = 1,
-	Max = 5,
-	Default = 2,
-	Increment = 1,
-	Suffix = " nguoi",
+	Text = "Delay moi lan Hop (Cooldown)",
+	Description = "Thoi gian cho truoc khi hop sang server tiep theo",
+	Icon = "Lucide:clock",
+	Flag = "hopDelay",
+	Min = 5,
+	Max = 60,
+	Default = 30,
+	Increment = 5,
+	Suffix = "s",
 	Callback = function(value)
-		maxPlayersLimit = math.floor(tonumber(value) or 2)
+		hopDelay = math.floor(tonumber(value) or 30)
 	end,
 })
 
 Tabs.Finder:AddSlider({
-	Text = "Do tre quet (Delay)",
-	Description = "Thoi gian cho giua cac trang API",
+	Text = "Do tre quet API",
+	Description = "Thoi gian nghi giua cac trang API",
 	Icon = "Lucide:timer",
-	Flag = "requestDelay",
+	Flag = "apiRequestDelay",
 	Min = 0.15,
 	Max = 1.0,
-	Default = 0.20,
+	Default = 0.25,
 	Increment = 0.05,
 	Suffix = "s",
 	Callback = function(value)
-		requestDelay = tonumber(value) or 0.20
+		apiRequestDelay = tonumber(value) or 0.25
 	end,
 })
 
@@ -143,7 +143,7 @@ Tabs.Finder:AddSection("Trang thai & Dieu khien", "Lucide:activity")
 statusParagraph = Tabs.Finder:AddParagraph({
 	Title = "Trang thai",
 	Icon = "Lucide:info",
-	Text = "Dang kiem tra so nguoi trong server hien tai...",
+	Text = "Dang kiem tra so nguoi trong server...",
 })
 
 local startAutoScan
@@ -176,8 +176,8 @@ attemptAutoHop = function()
 
 	local target = candidates[1]
 	if not target then
-		updateStatusText("Dang quet", string.format("Chua co server %d-%d nguoi. Dang tiep tuc quet sau...", minPlayersLimit, maxPlayersLimit))
-		task.delay(1.0, function()
+		updateStatusText("Dang tim", string.format("Chua thay server <= %d nguoi. Tiep tuc quet...", maxPlayersLimit))
+		task.delay(1.5, function()
 			if autoHopEnabled and not isScanning then
 				startAutoScan()
 			end
@@ -188,7 +188,7 @@ attemptAutoHop = function()
 	env.HopVisitedServers[target.id] = true
 	autoHopInProgress = true
 	updateStatusText("Dich chuyen", string.format("Dang vao server %d nguoi (ID: %s)", target.playing, target.id))
-	VindUI:Notify({ Title = "Auto Hop", Text = string.format("Dang vao server %d nguoi...", target.playing), Type = "success", Duration = 3 })
+	VindUI:Notify({ Title = "Auto Hop", Text = string.format("Vao server %d nguoi...", target.playing), Type = "success", Duration = 3 })
 
 	local ok, err = pcall(function()
 		TeleportService:TeleportToPlaceInstance(placeId, target.id, LocalPlayer)
@@ -196,14 +196,14 @@ attemptAutoHop = function()
 
 	if not ok then
 		autoHopInProgress = false
-		updateStatusText("Loi vao server", tostring(err) .. "; chuyen server khac...")
-		task.delay(0.5, function()
+		updateStatusText("Loi vao server", tostring(err) .. "; thu server khac sau 2s...")
+		task.delay(2.0, function()
 			if autoHopEnabled then
 				attemptAutoHop()
 			end
 		end)
 	else
-		task.delay(10, function()
+		task.delay(12, function()
 			if autoHopInProgress then
 				autoHopInProgress = false
 				if autoHopEnabled then
@@ -258,19 +258,19 @@ startAutoScan = function()
 	scanGeneration = scanGeneration + 1
 	local thisGen = scanGeneration
 	allDiscoveredServers = {}
-	updateStatusText("Dang quet", "Bat dau quet may chu cong khai...")
+	updateStatusText("Dang quet", "Bat dau quet tim server it nguoi nhat...")
 
 	task.spawn(function()
 		local cursor = nil
 		local seenIds = {}
-		local foundIdealTarget = false
+		local foundTarget = false
 
 		for page = 1, 60 do
 			if thisGen ~= scanGeneration then
 				return
 			end
 
-			updateStatusText("Dang quet", string.format("Trang %d | Tim thay %d server", page, #allDiscoveredServers))
+			updateStatusText("Dang quet", string.format("Trang %d | Tim duoc %d server hop le", page, #allDiscoveredServers))
 			local payload = fetchServers(cursor)
 			if not payload then
 				break
@@ -291,13 +291,13 @@ startAutoScan = function()
 						})
 
 						if playing >= minPlayersLimit and playing <= maxPlayersLimit then
-							foundIdealTarget = true
+							foundTarget = true
 						end
 					end
 				end
 			end
 
-			if autoHopEnabled and foundIdealTarget and not autoHopInProgress then
+			if autoHopEnabled and foundTarget and not autoHopInProgress then
 				task.spawn(attemptAutoHop)
 				break
 			end
@@ -306,7 +306,7 @@ startAutoScan = function()
 			if not cursor or cursor == "" then
 				break
 			end
-			task.wait(requestDelay)
+			task.wait(apiRequestDelay)
 		end
 
 		if thisGen ~= scanGeneration then
@@ -314,7 +314,7 @@ startAutoScan = function()
 		end
 
 		isScanning = false
-		updateStatusText("Hoan tat", string.format("Da quet xong. Tong cong: %d server.", #allDiscoveredServers))
+		updateStatusText("Hoan tat", string.format("Quet xong. Tong: %d server.", #allDiscoveredServers))
 
 		if autoHopEnabled and not autoHopInProgress then
 			task.delay(0.1, attemptAutoHop)
@@ -323,32 +323,24 @@ startAutoScan = function()
 end
 
 Tabs.Finder:AddButton({
-	Text = "Quet lai ngay",
-	Description = "Lam moi danh sach va quet may chu moi",
-	Icon = "Lucide:refresh-cw",
+	Text = "Quet & Hop ngay lap tuc",
+	Description = "Bo qua thoi gian cho 30s de tim server moi ngay",
+	Icon = "Lucide:fast-forward",
 	Callback = function()
 		startAutoScan()
 	end,
 })
 
 Tabs.Finder:AddButton({
-	Text = "Vao server it nguoi nhat",
-	Description = "Dich chuyen den server it nguoi nhat da tim thay",
-	Icon = "Lucide:log-in",
-	Callback = function()
-		attemptAutoHop()
-	end,
-})
-
-Tabs.Finder:AddButton({
-	Text = "Dung quet",
-	Description = "Dung tien trinh quet may chu",
+	Text = "Dung Auto Hop",
+	Description = "Dung quet va dung tu dong hop",
 	Icon = "Lucide:circle-stop",
 	Callback = function()
+		autoHopEnabled = false
+		autoHopInProgress = false
 		scanGeneration = scanGeneration + 1
 		isScanning = false
-		autoHopInProgress = false
-		updateStatusText("Da dung", "Da dung qua trinh quet may chu.")
+		updateStatusText("Da dung", "Da dung Auto Hop.")
 	end,
 })
 
@@ -389,9 +381,9 @@ Tabs.Settings:AddKeybind({
 
 Tabs.Settings:AddDivider()
 Tabs.Settings:AddParagraph({
-	Title = "Co che Auto Hop chuan 1-2 nguoi",
-	Icon = "Lucide:info",
-	Text = "He thong luu danh sach server da ghe qua de khong vao lai server cu. Khi vao server ma so nguoi vuot qua muc toi da, script se tu dong hop tiep ngay lap tuc.",
+	Title = "Co che Delay 30s & Loc 1 nguoi",
+	Icon = "Lucide:shield-check",
+	Text = "Moi server se duoc danh gia trong 30 giay. Neu sau 30 giay (hoac khi vua vao) server vuot qua so nguoi cho phep, he thong se thuc hien hop tiep theo dung delay 30s de tranh bi Roblox gioi han toc do (rate-limit).",
 })
 
 pcall(function()
@@ -400,7 +392,7 @@ pcall(function()
 			autoHopInProgress = false
 			updateStatusText("Dich chuyen that bai", tostring(result) .. " - " .. tostring(errorMessage))
 			if autoHopEnabled then
-				task.delay(1, attemptAutoHop)
+				task.delay(3, attemptAutoHop)
 			end
 		end
 	end)
@@ -411,30 +403,37 @@ Window:Open()
 
 VindUI:Notify({
 	Title = "Low Server Finder",
-	Text = "Giao dien Vind UI da san sang!",
+	Text = "Che do tim server it nguoi (Delay 30s) da bat!",
 	Type = "success",
 	Duration = 3,
 })
 
 task.spawn(function()
-	task.wait(2.5)
-	local currentCount = #Players:GetPlayers()
-	if currentCount > maxPlayersLimit then
-		updateStatusText("Server dong (" .. tostring(currentCount) .. " nguoi)", "So nguoi vuot qua gioi han (" .. tostring(maxPlayersLimit) .. "). Dang tu dong tim server 1-2 nguoi...")
-		VindUI:Notify({
-			Title = "Auto Re-Hop",
-			Text = string.format("Server hien tai co %d nguoi. Dang tu dong hop tiep...", currentCount),
-			Type = "warning",
-			Duration = 4,
-		})
-		startAutoScan()
-	else
-		updateStatusText("Server ly tuong (" .. tostring(currentCount) .. " nguoi)", "Server hien tai dat yeu cau (<= " .. tostring(maxPlayersLimit) .. " nguoi).")
-		VindUI:Notify({
-			Title = "Dat yeu cau",
-			Text = string.format("Server hien tai chi co %d nguoi!", currentCount),
-			Type = "success",
-			Duration = 4,
-		})
+	task.wait(3.0)
+	while true do
+		local currentCount = #Players:GetPlayers()
+		if not autoHopEnabled then
+			task.wait(2)
+		elseif currentCount > maxPlayersLimit then
+			for remaining = hopDelay, 1, -1 do
+				if not autoHopEnabled then
+					break
+				end
+				updateStatusText(
+					string.format("Server dong (%d nguoi)", currentCount),
+					string.format("Vuot qua muc toi da (%d nguoi). Se hop sau %d giay...", maxPlayersLimit, remaining)
+				)
+				task.wait(1)
+			end
+			if autoHopEnabled and not autoHopInProgress then
+				startAutoScan()
+			end
+		else
+			updateStatusText(
+				string.format("Server chuan (%d nguoi)", currentCount),
+				string.format("Server hien tai dat yeu cau (<= %d nguoi). Tiep tuc giam sat...", maxPlayersLimit)
+			)
+			task.wait(5)
+		end
 	end
 end)
